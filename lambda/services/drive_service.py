@@ -40,7 +40,8 @@ class DriveService:
         order_id: str,
         customer_name: str,
         urls: List[str],
-        parent_folder_id: Optional[str] = None
+        parent_folder_id: Optional[str] = None,
+        project_name: Optional[str] = None
     ) -> Optional[Tuple[str, str]]:
         """依頼用フォルダを作成
 
@@ -49,13 +50,18 @@ class DriveService:
             customer_name: 顧客名
             urls: URL一覧
             parent_folder_id: 親フォルダID（会社フォルダ）。なければルートフォルダ
+            project_name: 案件名
 
         Returns:
             Tuple[folder_url, folder_id] or None
         """
         try:
             today = datetime.now().strftime('%Y-%m-%d')
-            folder_name = f"{today}_{order_id[:8]}"
+            # 案件名があれば含める
+            if project_name:
+                folder_name = f"{today}_{project_name}_{order_id[:8]}"
+            else:
+                folder_name = f"{today}_{order_id[:8]}"
 
             # 親フォルダを決定（会社フォルダがあればそこ、なければルート）
             target_parent = parent_folder_id if parent_folder_id else self.folder_id

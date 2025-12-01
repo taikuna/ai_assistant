@@ -161,3 +161,26 @@ class LinePushService:
         except Exception as ex:
             print(f"Push to Group Error: {str(ex)}")
             return False
+
+    def push_flex_to_group(self, group_id: str, flex_message: dict) -> bool:
+        """グループにFlex Messageをpush送信"""
+        import urllib.request
+
+        url = 'https://api.line.me/v2/bot/message/push'
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.channel_access_token}'
+        }
+        data = {
+            'to': group_id,
+            'messages': [flex_message]
+        }
+
+        try:
+            req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+            urllib.request.urlopen(req)
+            print(f"Push flex message sent to group: {group_id}")
+            return True
+        except Exception as ex:
+            print(f"Push Flex to Group Error: {str(ex)}")
+            return False

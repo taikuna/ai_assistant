@@ -44,6 +44,8 @@ cp "$LAMBDA_DIR/services/download_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/delayed_response_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/greeting_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/client_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/queue_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/approval_service.py" "$BUILD_DIR/services/"
 
 # クライアントマスターJSON
 cp "$LAMBDA_DIR/clients.json" "$BUILD_DIR/"

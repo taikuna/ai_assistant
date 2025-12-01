@@ -158,3 +158,54 @@ class LineHandler(BaseHandler):
         }
         ext = extension_map.get(attachment.type, '')
         return f"line_{attachment.content_id}{ext}"
+
+    def reply_flex(self, message: IncomingMessage, flex_message: dict) -> bool:
+        """Flex Messageで返信"""
+        if not message.reply_token:
+            return False
+
+        url = 'https://api.line.me/v2/bot/message/reply'
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.channel_access_token}'
+        }
+        data = {
+            'replyToken': message.reply_token,
+            'messages': [flex_message]
+        }
+
+        try:
+            req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+            urllib.request.urlopen(req)
+            return True
+        except Exception as ex:
+            print(f"LINE Flex Reply Error: {str(ex)}")
+            return False
+
+    def push_flex(self, target_id: str, flex_message: dict, is_group: bool = False) -> bool:
+        """Flex MessageをPush送信"""
+        if is_group:
+            url = 'https://api.line.me/v2/bot/message/push'
+            data = {
+                'to': target_id,
+                'messages': [flex_message]
+            }
+        else:
+            url = 'https://api.line.me/v2/bot/message/push'
+            data = {
+                'to': target_id,
+                'messages': [flex_message]
+            }
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.channel_access_token}'
+        }
+
+        try:
+            req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+            urllib.request.urlopen(req)
+            return True
+        except Exception as ex:
+            print(f"LINE Flex Push Error: {str(ex)}")
+            return False

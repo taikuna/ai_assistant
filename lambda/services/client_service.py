@@ -1,12 +1,13 @@
 """
-クライアント管理サービス - JSONからクライアント情報を管理
+クライアント管理サービス - DynamoDBでクライアント情報を管理
 会社フォルダの作成、メールアドレスへの共有権限付与
 """
 import json
 import os
-from typing import Optional, List, Dict
+from typing import Optional, List
 from dataclasses import dataclass
 
+import boto3
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -31,13 +32,13 @@ class Client:
 class ClientService:
     """クライアント管理サービス"""
 
-    def __init__(self, clients_file: str = None, service_account_info: dict = None, root_folder_id: str = None):
-        self.clients_file = clients_file or os.path.join(os.path.dirname(__file__), '..', 'clients.json')
+    def __init__(self, table_name: str = None, service_account_info: dict = None, root_folder_id: str = None):
+        self.dynamodb = boto3.resource('dynamodb')
+        self.table = self.dynamodb.Table(table_name or 'ai_secretary_clients')
         self.service_account_info = service_account_info or json.loads(
             os.environ.get('GOOGLE_SERVICE_ACCOUNT', '{}')
         )
         self.root_folder_id = root_folder_id or os.environ.get('GOOGLE_DRIVE_FOLDER_ID')
-        self._clients_cache = None
         self._drive_service = None
 
     @property
@@ -51,53 +52,34 @@ class ClientService:
             self._drive_service = build('drive', 'v3', credentials=credentials)
         return self._drive_service
 
-    def _load_clients(self) -> Dict:
-        """クライアントJSONを読み込み"""
-        if self._clients_cache is not None:
-            return self._clients_cache
-
-        try:
-            with open(self.clients_file, 'r', encoding='utf-8') as f:
-                self._clients_cache = json.load(f)
-                return self._clients_cache
-        except FileNotFoundError:
-            print(f"Clients file not found: {self.clients_file}")
-            return {"clients": []}
-        except Exception as ex:
-            print(f"Error loading clients: {str(ex)}")
-            return {"clients": []}
-
-    def _save_clients(self, data: Dict):
-        """クライアントJSONを保存"""
-        try:
-            with open(self.clients_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-            self._clients_cache = data
-        except Exception as ex:
-            print(f"Error saving clients: {str(ex)}")
-
     def get_client_by_group_id(self, group_id: str) -> Optional[Client]:
         """グループIDからクライアントを取得"""
-        data = self._load_clients()
+        try:
+            response = self.table.get_item(Key={'group_id': group_id})
+            item = response.get('Item')
 
-        for client_data in data.get('clients', []):
-            if client_data.get('group_id') == group_id:
-                contacts = [
-                    Contact(name=c.get('name', ''), email=c.get('email', ''))
-                    for c in client_data.get('contacts', [])
-                ]
-                return Client(
-                    group_id=client_data['group_id'],
-                    company_name=client_data['company_name'],
-                    contacts=contacts,
-                    drive_folder_id=client_data.get('drive_folder_id'),
-                    notes=client_data.get('notes', '')
-                )
-        return None
+            if not item:
+                return None
+
+            contacts = [
+                Contact(name=c.get('name', ''), email=c.get('email', ''))
+                for c in item.get('contacts', [])
+            ]
+
+            return Client(
+                group_id=item['group_id'],
+                company_name=item['company_name'],
+                contacts=contacts,
+                drive_folder_id=item.get('drive_folder_id'),
+                notes=item.get('notes', '')
+            )
+
+        except Exception as ex:
+            print(f"Get client error: {str(ex)}")
+            return None
 
     def get_client_by_user_id(self, user_id: str) -> Optional[Client]:
         """ユーザーIDからクライアントを取得（個人チャット用）"""
-        # 個人チャットの場合は user_{user_id} 形式で登録
         return self.get_client_by_group_id(f"user_{user_id}")
 
     def get_or_create_company_folder(self, client: Client) -> Optional[str]:
@@ -127,7 +109,7 @@ class ClientService:
                 if contact.email:
                     self._share_folder_with_email(folder_id, contact.email)
 
-            # JSONを更新（フォルダIDを保存）
+            # DynamoDBを更新（フォルダIDを保存）
             self._update_client_folder_id(client.group_id, folder_id)
 
             return folder_id
@@ -141,13 +123,13 @@ class ClientService:
         try:
             permission = {
                 'type': 'user',
-                'role': 'reader',  # 閲覧権限
+                'role': 'reader',
                 'emailAddress': email
             }
             self.drive_service.permissions().create(
                 fileId=folder_id,
                 body=permission,
-                sendNotificationEmail=False,  # 通知メールを送らない
+                sendNotificationEmail=False,
                 supportsAllDrives=True
             ).execute()
             print(f"Shared folder with: {email}")
@@ -155,15 +137,16 @@ class ClientService:
             print(f"Error sharing folder with {email}: {str(ex)}")
 
     def _update_client_folder_id(self, group_id: str, folder_id: str):
-        """クライアントのフォルダIDを更新"""
-        data = self._load_clients()
-
-        for client_data in data.get('clients', []):
-            if client_data.get('group_id') == group_id:
-                client_data['drive_folder_id'] = folder_id
-                break
-
-        self._save_clients(data)
+        """クライアントのフォルダIDをDynamoDBに更新"""
+        try:
+            self.table.update_item(
+                Key={'group_id': group_id},
+                UpdateExpression='SET drive_folder_id = :folder_id',
+                ExpressionAttributeValues={':folder_id': folder_id}
+            )
+            print(f"Updated client folder_id: {group_id} -> {folder_id}")
+        except Exception as ex:
+            print(f"Error updating client folder_id: {str(ex)}")
 
     def get_company_name(self, group_id: str, user_id: str) -> str:
         """会社名を取得（クライアント未登録の場合は'未登録'）"""
@@ -177,3 +160,78 @@ class ClientService:
         """登録済みクライアントかどうか"""
         client = self.get_client_by_group_id(group_id) if group_id else self.get_client_by_user_id(user_id)
         return client is not None
+
+    def register_client(self, group_id: str, company_name: str, contacts: List[dict] = None, notes: str = "") -> bool:
+        """新規クライアントを登録"""
+        try:
+            item = {
+                'group_id': group_id,
+                'company_name': company_name,
+                'contacts': contacts or [],
+                'notes': notes,
+                'status': 'active'
+            }
+            self.table.put_item(Item=item)
+            print(f"Registered new client: {company_name} ({group_id})")
+            return True
+        except Exception as ex:
+            print(f"Error registering client: {str(ex)}")
+            return False
+
+    def set_pending_registration(self, group_id: str, suggested_company: str = None):
+        """登録待ち状態を設定"""
+        try:
+            item = {
+                'group_id': group_id,
+                'status': 'pending_registration',
+                'suggested_company': suggested_company or ''
+            }
+            self.table.put_item(Item=item)
+            print(f"Set pending registration: {group_id}")
+        except Exception as ex:
+            print(f"Error setting pending registration: {str(ex)}")
+
+    def is_pending_registration(self, group_id: str) -> tuple:
+        """登録待ち状態かどうかを確認
+
+        Returns:
+            (is_pending, suggested_company)
+        """
+        try:
+            response = self.table.get_item(Key={'group_id': group_id})
+            item = response.get('Item')
+            if item and item.get('status') == 'pending_registration':
+                return True, item.get('suggested_company', '')
+            return False, ''
+        except Exception as ex:
+            print(f"Error checking pending registration: {str(ex)}")
+            return False, ''
+
+    def get_all_company_names(self) -> List[str]:
+        """登録済みの全会社名を取得"""
+        try:
+            response = self.table.scan(
+                FilterExpression='attribute_exists(company_name) AND #s = :active',
+                ExpressionAttributeNames={'#s': 'status'},
+                ExpressionAttributeValues={':active': 'active'},
+                ProjectionExpression='company_name'
+            )
+            companies = [item['company_name'] for item in response.get('Items', []) if item.get('company_name')]
+            return list(set(companies))  # 重複を除去
+        except Exception as ex:
+            print(f"Error getting company names: {str(ex)}")
+            return []
+
+    def find_similar_company(self, input_text: str) -> Optional[str]:
+        """入力テキストから類似の会社名を検索"""
+        companies = self.get_all_company_names()
+        if not companies:
+            return None
+
+        # 部分一致で検索
+        input_lower = input_text.lower()
+        for company in companies:
+            if input_lower in company.lower() or company.lower() in input_lower:
+                return company
+
+        return None
