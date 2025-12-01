@@ -1,0 +1,17 @@
+{
+  "clients": [
+    {
+      "group_id": "C012005fb8e51dceec0e7ec063591595e",
+      "company_name": "テスト株式会社",
+      "contacts": [
+        {
+          "name": "テスト担当者",
+          "email": "tiknzk@gmail.com"
+        }
+      ],
+      "drive_folder_id": null,
+      "notes": "テスト用グループ"
+    }
+  ],
+  "_comment": "group_id: LINEグループID、drive_folder_id: 自動作成後に設定される"
+}

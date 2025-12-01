@@ -1,0 +1,220 @@
+"""
+AI サービス - Gemini API との連携
+"""
+import json
+import urllib.request
+import os
+import base64
+from typing import List, Tuple, Optional
+
+
+class AIService:
+    """AI応答を生成するサービス"""
+
+    def __init__(self, api_key: str = None, model: str = "gemini-2.5-flash"):
+        self.api_key = api_key or os.environ.get('GEMINI_API_KEY')
+        self.model = model
+        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
+
+    def generate_response(self, prompt: str, system_prompt: str = "", user_name: str = "") -> str:
+        """AIレスポンスを生成"""
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        full_prompt = system_prompt
+        if user_name:
+            full_prompt += f"\n\nお客様（{user_name}）: "
+        full_prompt += prompt
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": [{"text": full_prompt}]}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=25) as res:
+                result = json.loads(res.read().decode())
+                return result['candidates'][0]['content']['parts'][0]['text']
+        except Exception as ex:
+            print(f"AI Error: {str(ex)}")
+            return f"Error: {str(ex)}"
+
+    def create_summary(self, message: str, summary_prompt: str) -> str:
+        """メッセージのサマリーを作成"""
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": [{"text": summary_prompt.format(message=message)}]}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=15) as res:
+                result = json.loads(res.read().decode())
+                return result['candidates'][0]['content']['parts'][0]['text']
+        except Exception as ex:
+            print(f"Summary Error: {str(ex)}")
+            return message[:200]
+
+    def extract_project_name(self, message: str) -> str:
+        """依頼メッセージから案件名を抽出"""
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        prompt = f"""以下の依頼メッセージから案件名・プロジェクト名を抽出してください。
+案件名が明確にない場合は、依頼内容を簡潔に表す名前（10文字以内）を生成してください。
+回答は案件名のみを出力し、説明や記号は不要です。
+
+依頼メッセージ:
+{message}
+
+案件名:"""
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": [{"text": prompt}]}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as res:
+                result = json.loads(res.read().decode())
+                project_name = result['candidates'][0]['content']['parts'][0]['text'].strip()
+                # 改行や余分な文字を削除
+                project_name = project_name.split('\n')[0].strip()
+                # 長すぎる場合は切り詰め
+                if len(project_name) > 30:
+                    project_name = project_name[:30]
+                return project_name
+        except Exception as ex:
+            print(f"Project name extraction error: {str(ex)}")
+            return ""
+
+    def analyze_images(self, images: List[Tuple[bytes, str]], project_name: Optional[str] = None) -> str:
+        """画像を解析して内容を説明
+
+        Args:
+            images: [(画像バイナリ, content_type), ...] のリスト
+            project_name: 案件名（あれば確認に使用）
+
+        Returns:
+            画像の説明テキスト
+        """
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        # 画像パーツを作成
+        parts = []
+
+        # プロンプト（簡潔に、記号なし、断定的に）
+        if project_name:
+            prompt_text = f"""以下の画像を確認して、簡潔に報告してください。
+
+ルール:
+- 絵文字や記号（---、**など）は使わない
+- 各画像は1行で簡潔に説明
+- 最後に「{project_name}の案件に指示データとして追加登録します。」と断定的に伝える
+- 全体で5行以内に収める"""
+        else:
+            prompt_text = """以下の画像を確認して、簡潔に報告してください。
+
+ルール:
+- 絵文字や記号（---、**など）は使わない
+- 各画像は1行で簡潔に説明
+- 最後に「指示データとして追加登録します。」と断定的に伝える
+- 全体で5行以内に収める"""
+
+        parts.append({"text": prompt_text})
+
+        # 画像を追加（最大4枚）
+        for i, (image_data, content_type) in enumerate(images[:4]):
+            base64_image = base64.b64encode(image_data).decode('utf-8')
+            parts.append({
+                "inline_data": {
+                    "mime_type": content_type,
+                    "data": base64_image
+                }
+            })
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": parts}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as res:
+                result = json.loads(res.read().decode())
+                return result['candidates'][0]['content']['parts'][0]['text']
+        except Exception as ex:
+            print(f"Image analysis error: {str(ex)}")
+            return ""
+
+    def analyze_pdf(self, pdf_data: bytes, project_name: Optional[str] = None) -> str:
+        """PDFを解析して内容を説明
+
+        Args:
+            pdf_data: PDFバイナリ
+            project_name: 案件名（あれば確認に使用）
+
+        Returns:
+            PDFの説明テキスト
+        """
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        base64_pdf = base64.b64encode(pdf_data).decode('utf-8')
+
+        if project_name:
+            prompt_text = f"""以下のPDFを確認して、簡潔に報告してください。
+
+ルール:
+- 絵文字や記号（---、**など）は使わない
+- 内容を2-3行で簡潔に要約
+- 最後に「{project_name}の案件に指示データとして追加登録します。」と断定的に伝える
+- 全体で5行以内に収める"""
+        else:
+            prompt_text = """以下のPDFを確認して、簡潔に報告してください。
+
+ルール:
+- 絵文字や記号（---、**など）は使わない
+- 内容を2-3行で簡潔に要約
+- 最後に「指示データとして追加登録します。」と断定的に伝える
+- 全体で5行以内に収める"""
+
+        parts = [
+            {"text": prompt_text},
+            {
+                "inline_data": {
+                    "mime_type": "application/pdf",
+                    "data": base64_pdf
+                }
+            }
+        ]
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": parts}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=25) as res:
+                result = json.loads(res.read().decode())
+                return result['candidates'][0]['content']['parts'][0]['text']
+        except Exception as ex:
+            print(f"PDF analysis error: {str(ex)}")
+            return ""
