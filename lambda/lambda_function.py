@@ -232,6 +232,29 @@ def handle_slack_interaction(event: dict):
                     )
                     print(f"Delivery approval request created: {delivery_pending_id}")
 
+            elif action_id == 'unsend_message':
+                # 送信取り消し → 再編集可能に
+                pending = approval_service.get_message_by_id(pending_id)
+                if pending:
+                    # ステータスをpendingに戻す
+                    approval_service.reopen_message(pending_id)
+
+                    # 新しい承認リクエストを送信（元のメッセージ情報で）
+                    notification_service.send_approval_request(
+                        pending_id=pending_id,
+                        customer_name=pending.get('customer_name', ''),
+                        company_name=pending.get('company_name', ''),
+                        original_message=pending.get('original_message', ''),
+                        response_text=pending.get('response_text', ''),
+                        has_mention=bool(pending.get('mention_user_id'))
+                    )
+
+                    # 元のメッセージを更新
+                    notification_service.update_approval_message(
+                        channel, message_ts, pending_id, 'reopened', user_id
+                    )
+                    print(f"Message unsent and reopened: {pending_id}")
+
         elif interaction_type == 'view_submission':
             # モーダル送信
             view = payload.get('view', {})

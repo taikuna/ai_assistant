@@ -338,9 +338,13 @@ class SlackNotificationService:
         message_ts: str,
         pending_id: str,
         status: str,
-        action_user: str = None
+        action_user: str = None,
+        response_text: str = None,
+        customer_name: str = None,
+        company_name: str = None,
+        original_message: str = None
     ) -> bool:
-        """承認メッセージを更新（納品ボタンを残す）"""
+        """承認メッセージを更新（送信取り消し対応）"""
         if not self.bot_token:
             return False
 
@@ -348,7 +352,8 @@ class SlackNotificationService:
             status_text = {
                 'approved': '✅ 送信済み',
                 'rejected': '❌ 却下済み',
-                'editing': '✏️ 修正中'
+                'editing': '✏️ 修正中',
+                'reopened': '🔄 再編集中'
             }.get(status, status)
 
             blocks = [
@@ -361,7 +366,7 @@ class SlackNotificationService:
                 }
             ]
 
-            # 送信済みの場合は納品ボタンを追加
+            # 送信済みの場合は納品ボタンと送信取り消しボタンを追加
             if status == 'approved':
                 blocks.append({
                     "type": "actions",
@@ -370,6 +375,13 @@ class SlackNotificationService:
                             "type": "button",
                             "text": {"type": "plain_text", "text": "📦 納品", "emoji": True},
                             "action_id": "create_delivery",
+                            "value": pending_id
+                        },
+                        {
+                            "type": "button",
+                            "text": {"type": "plain_text", "text": "↩️ 送信取り消し", "emoji": True},
+                            "style": "danger",
+                            "action_id": "unsend_message",
                             "value": pending_id
                         }
                     ]

@@ -160,6 +160,21 @@ class ApprovalService:
         )
         return True
 
+    def reopen_message(self, pending_id: str) -> bool:
+        """承認済みメッセージを再度pending状態に戻す（送信取り消し用）"""
+        pending = self.get_message_by_id(pending_id)
+        if not pending:
+            return False
+
+        self.table.update_item(
+            Key={'pending_id': pending_id, 'created_at': pending['created_at']},
+            UpdateExpression='SET #status = :status',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={':status': 'pending'}
+        )
+        print(f"Message reopened: {pending_id}")
+        return True
+
     def update_pending_response(self, pending_id: str, new_response: str) -> bool:
         """保留メッセージの返信テキストを更新"""
         # まずpending状態のメッセージを探す
