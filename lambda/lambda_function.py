@@ -941,6 +941,12 @@ def process_message(
     has_attachments = len(message.attachments) > 0
     is_order_request = order_service.is_order_request(user_message)
 
+    # 案件IDが含まれている場合は既存案件の編集なので新規依頼ではない
+    existing_order_id = extract_order_id_from_message(user_message)
+    if existing_order_id:
+        is_order_request = False
+        print(f"Message contains order ID {existing_order_id}, treating as existing order edit")
+
     # 添付ファイルのみ（指示書の追加）かどうか判定
     # テキストが短い（20文字以下）か空で、添付ファイルがある場合のみ指示書追加として扱う
     is_attachment_only = has_attachments and len(user_message.strip()) <= 20 and not is_order_request
