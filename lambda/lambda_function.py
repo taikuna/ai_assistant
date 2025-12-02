@@ -699,8 +699,11 @@ def process_message(
     if group_id and not approval_service.is_approval_group(group_id):
         has_trigger = unprocessed_service.has_trigger_keyword(user_message)
 
-        if not has_trigger:
-            # トリガーがなければ未処理メッセージとして保存して終了
+        # AIが直近10分以内に返信していれば、返信待ち状態
+        is_awaiting_reply, last_ai_response = greeting_service.is_awaiting_reply(group_id, message.user_id, minutes=10)
+
+        if not has_trigger and not is_awaiting_reply:
+            # トリガーがなく、返信待ちでもなければ未処理メッセージとして保存して終了
             unprocessed_service.save_unprocessed_message(
                 group_id=group_id,
                 message_id=message_id,
@@ -710,7 +713,24 @@ def process_message(
             )
             print(f"Message saved as unprocessed (no trigger keyword): {message_id}")
             return
-        else:
+        elif is_awaiting_reply and not has_trigger:
+            # 返信待ち状態でトリガーなし → AIに「自分宛てか」判定させる
+            is_for_ai = ai_service.is_message_for_ai(user_message, last_ai_response)
+            if not is_for_ai:
+                # AI宛てではない → 未処理メッセージとして保存
+                unprocessed_service.save_unprocessed_message(
+                    group_id=group_id,
+                    message_id=message_id,
+                    user_id=message.user_id,
+                    user_name=user_name,
+                    message_text=user_message
+                )
+                print(f"Message not for AI, saved as unprocessed: {message_id}")
+                return
+            # AI宛て → 処理を続行
+            print(f"Processing as reply to AI (awaiting reply mode): {message_id}")
+            has_trigger = True  # 自動送信時間帯の判定用にTrueにする
+        elif has_trigger:
             # トリガーがある場合、未処理メッセージを取得して結合
             unprocessed_messages = unprocessed_service.get_unprocessed_messages(group_id)
             if unprocessed_messages:
@@ -1160,6 +1180,9 @@ def process_message(
         order_info=order_info,  # 依頼情報（承認後に通知するため）
         has_trigger=has_trigger  # トリガーキーワードがあれば自動送信時間帯は承認スキップ
     )
+
+    # AIの返信内容を記録（返信待ち状態の判定用）
+    greeting_service.record_contact(group_id, message.user_id, ai_response)
 
 
 def upload_line_attachments(handler, attachments: list, file_uploader, folder_id: str) -> int:

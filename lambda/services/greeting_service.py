@@ -36,19 +36,31 @@ class GreetingService:
             # エラー時は挨拶しない（安全側に倒す）
             return False
 
-    def record_contact(self, group_id: Optional[str], user_id: str):
-        """やり取りを記録"""
+    def record_contact(self, group_id: Optional[str], user_id: str, ai_response: str = ""):
+        """やり取りを記録
+
+        Args:
+            group_id: グループID
+            user_id: ユーザーID
+            ai_response: AIの返信内容（返信待ち判定用）
+        """
         try:
             contact_id = group_id if group_id else f"user_{user_id}"
             today = date.today().isoformat()
             now = datetime.now().isoformat()
 
-            self.table.put_item(Item={
+            item = {
                 'contact_id': contact_id,
                 'last_contact_date': today,
                 'last_contact_time': now,
                 'user_id': user_id
-            })
+            }
+
+            # AIの返信内容を保存（500文字まで）
+            if ai_response:
+                item['last_ai_response'] = ai_response[:500]
+
+            self.table.put_item(Item=item)
 
         except Exception as ex:
             print(f"Record contact error: {str(ex)}")
@@ -74,3 +86,40 @@ class GreetingService:
             greeting = self.create_greeting(company_name, user_name)
             return greeting + response_text
         return response_text
+
+    def is_awaiting_reply(self, group_id: Optional[str], user_id: str, minutes: int = 10) -> tuple:
+        """AIが直近で返信していて、返信待ち状態かどうか
+
+        直近N分以内にAIが返信していれば、ユーザーの次のメッセージは
+        トリガーキーワードなしでも処理する
+
+        Returns:
+            (is_awaiting: bool, last_ai_response: str)
+        """
+        try:
+            from datetime import timedelta
+
+            contact_id = group_id if group_id else f"user_{user_id}"
+
+            response = self.table.get_item(Key={'contact_id': contact_id})
+            item = response.get('Item')
+
+            if not item:
+                return False, ""
+
+            last_contact_time = item.get('last_contact_time')
+            if not last_contact_time:
+                return False, ""
+
+            # 最後の返信時間からN分以内かチェック
+            last_time = datetime.fromisoformat(last_contact_time)
+            cutoff_time = datetime.now() - timedelta(minutes=minutes)
+
+            is_awaiting = last_time > cutoff_time
+            last_ai_response = item.get('last_ai_response', '') if is_awaiting else ""
+
+            return is_awaiting, last_ai_response
+
+        except Exception as ex:
+            print(f"Awaiting reply check error: {str(ex)}")
+            return False, ""

@@ -173,6 +173,60 @@ class AIService:
             print(f"Image analysis error: {str(ex)}")
             return ""
 
+    def is_message_for_ai(self, message: str, context: str = "") -> bool:
+        """メッセージがAI宛てかどうかを判定
+
+        Args:
+            message: ユーザーのメッセージ
+            context: 直前のAIの発言（あれば）
+
+        Returns:
+            True: AI宛ての返信
+            False: 別の会話（AI宛てではない）
+        """
+        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
+
+        prompt = f"""あなたはグループチャットで動作するAIアシスタントです。
+以下のメッセージが「AIへの返信・依頼」か「別の人同士の会話」かを判定してください。
+
+【直前のAIの発言】
+{context if context else "（なし）"}
+
+【ユーザーのメッセージ】
+{message}
+
+【判定基準】
+- AIが質問した内容への回答（納期、確認事項への返答など）→ AI宛て
+- 依頼、お願い、質問 → AI宛て
+- 日付や時間のみの返信（直前にAIが確認していれば）→ AI宛て
+- 他のメンバーへの呼びかけ、雑談、業務連絡 → AI宛てではない
+- 「了解」「ありがとう」など曖昧な場合、直前にAIが発言していればAI宛て
+
+回答は「YES」または「NO」のみを出力してください。
+YES = AI宛て
+NO = AI宛てではない"""
+
+        data = {
+            "contents": [
+                {"role": "user", "parts": [{"text": prompt}]}
+            ]
+        }
+
+        headers = {"Content-Type": "application/json"}
+        req = urllib.request.Request(url, json.dumps(data).encode(), headers)
+
+        try:
+            with urllib.request.urlopen(req, timeout=5) as res:
+                result = json.loads(res.read().decode())
+                answer = result['candidates'][0]['content']['parts'][0]['text'].strip().upper()
+                is_for_ai = answer.startswith('YES')
+                print(f"Message for AI check: '{message[:50]}...' -> {is_for_ai}")
+                return is_for_ai
+        except Exception as ex:
+            print(f"Message check error: {str(ex)}")
+            # エラー時はAI宛てと判定（安全側）
+            return True
+
     def analyze_pdf(self, pdf_data: bytes, project_name: Optional[str] = None) -> str:
         """PDFを解析して内容を説明
 
