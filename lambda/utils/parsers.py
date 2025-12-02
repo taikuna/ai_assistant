@@ -105,6 +105,7 @@ def is_deadline_correction(text: str) -> bool:
         r'修正',
         r'訂正',
         r'間違',
+        r'納期',  # 「納期 12/4」のようなパターン
     ]
 
     # 日付パターン
@@ -121,3 +122,13 @@ def is_deadline_correction(text: str) -> bool:
     is_short_date_only = has_date and len(text.strip()) <= 50
 
     return has_date and (has_correction or is_short_date_only)
+
+
+def extract_order_id_from_message(text: str) -> Optional[str]:
+    """メッセージから案件ID（8文字の16進数）を抽出
+
+    例: 「dd67008b 納期 12月4日」→ 「dd67008b」
+    """
+    # 8文字の16進数パターン
+    match = re.search(r'\b([a-f0-9]{8})\b', text.lower())
+    return match.group(1) if match else None

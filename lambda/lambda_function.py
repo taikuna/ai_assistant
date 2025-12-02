@@ -32,7 +32,7 @@ from services.unprocessed_message_service import UnprocessedMessageService
 from services.user_mapping_service import UserMappingService
 
 # ユーティリティ
-from utils.parsers import extract_urls, extract_deadline, is_deadline_correction
+from utils.parsers import extract_urls, extract_deadline, is_deadline_correction, extract_order_id_from_message
 
 # 設定
 from config import SYSTEM_PROMPT, SUMMARY_PROMPT
@@ -803,9 +803,56 @@ def process_message(
     if is_deadline_correction(user_message):
         new_deadline = extract_deadline(user_message)
         if new_deadline:
-            # 直近の依頼を取得（60分以内）
-            recent_order = order_service.get_recent_order(group_id, message.user_id, minutes=60)
-            if recent_order:
+            # メッセージに案件IDが含まれているかチェック
+            specified_order_id = extract_order_id_from_message(user_message)
+
+            if specified_order_id:
+                # 案件ID指定あり → その案件を直接更新
+                # order_idは先頭8文字なので、部分一致で検索
+                target_order = None
+                recent_orders = order_service.get_recent_orders(group_id, message.user_id, minutes=1440)  # 24時間以内
+                for order in recent_orders:
+                    if order['order_id'].startswith(specified_order_id):
+                        target_order = order
+                        break
+
+                if target_order:
+                    order_id = target_order['order_id']
+                    order_created_at = target_order['created_at']
+                    old_deadline = target_order.get('deadline', '未設定')
+                    project_name = target_order.get('project_name', '')
+
+                    # 依頼の納期を更新
+                    order_service.update_order(order_id, {'deadline': new_deadline}, order_created_at)
+
+                    # カレンダーも更新
+                    calendar_service.create_deadline_event(
+                        order_id=order_id,
+                        customer_name=user_name,
+                        deadline=new_deadline,
+                        description=f"納期修正: {old_deadline} → {new_deadline}"
+                    )
+
+                    if project_name:
+                        ai_response = f"承知いたしました。\n「{project_name}」の納期を {new_deadline} に修正いたしました。"
+                    else:
+                        ai_response = f"承知いたしました。\n依頼（ID: {order_id[:8]}）の納期を {new_deadline} に修正いたしました。"
+
+                    handler.reply(message, ai_response)
+                    return
+                else:
+                    handler.reply(message, f"案件ID「{specified_order_id}」が見つかりませんでした。")
+                    return
+
+            # 直近の依頼を全て取得（60分以内）
+            recent_orders = order_service.get_recent_orders(group_id, message.user_id, minutes=60)
+
+            if len(recent_orders) == 0:
+                # 該当なし
+                pass  # 通常処理に進む
+            elif len(recent_orders) == 1:
+                # 1件のみ → そのまま更新
+                recent_order = recent_orders[0]
                 order_id = recent_order['order_id']
                 order_created_at = recent_order['created_at']
                 old_deadline = recent_order.get('deadline', '未設定')
@@ -829,6 +876,20 @@ def process_message(
                     ai_response = f"承知いたしました。\n依頼（ID: {order_id[:8]}）の納期を {new_deadline} に修正いたしました。"
 
                 handler.reply(message, ai_response)
+                return
+            else:
+                # 2件以上 → どの案件か確認
+                lines = ["どちらの案件の納期を修正しますか？", ""]
+                for order in recent_orders:
+                    oid = order['order_id'][:8]
+                    pname = order.get('project_name', '（案件名なし）')
+                    lines.append(f"• {oid}: {pname}")
+
+                lines.append("")
+                lines.append(f"案件IDを指定して再度お知らせください。")
+                lines.append(f"例: 「{recent_orders[0]['order_id'][:8]} 納期 {new_deadline}」")
+
+                handler.reply(message, "\n".join(lines))
                 return
 
     # 添付ファイルがある場合

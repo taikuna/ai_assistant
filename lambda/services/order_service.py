@@ -132,6 +132,14 @@ class OrderService:
 
         同じグループ/ユーザーからの直近N分以内の依頼があれば返す
         """
+        orders = self.get_recent_orders(group_id, user_id, minutes)
+        return orders[0] if orders else None
+
+    def get_recent_orders(self, group_id: Optional[str], user_id: str, minutes: int = 10) -> List[dict]:
+        """直近の依頼を全て取得（複数件対応）
+
+        同じグループ/ユーザーからの直近N分以内の依頼を全て返す（新しい順）
+        """
         try:
             cutoff_time = (datetime.now() - timedelta(minutes=minutes)).isoformat()
 
@@ -148,15 +156,15 @@ class OrderService:
 
             items = response.get('Items', [])
             if items:
-                # 最新の依頼を返す
+                # 新しい順にソート
                 items.sort(key=lambda x: x['created_at'], reverse=True)
-                return items[0]
+                return items
 
-            return None
+            return []
 
         except Exception as ex:
-            print(f"Get recent order error: {str(ex)}")
-            return None
+            print(f"Get recent orders error: {str(ex)}")
+            return []
 
     def add_attachment_to_order(self, order_id: str, attachment_info: str, created_at: str = None) -> bool:
         """依頼に添付ファイル情報を追加"""
