@@ -651,6 +651,7 @@ def process_message(
     is_proxy_send = False  # 代理送信フラグ
     proxy_user_id = None  # 代理送信時のメンション先ユーザーID
     has_trigger = False  # トリガーキーワードがあったかどうか（自動送信判定用）
+    is_reply_mode = False  # 返信モード（AIへの返答。新規案件は作らない）
 
     # グループ発言時はユーザー名→IDのマッピングを保存（後で名前から検索できるように）
     if group_id and message.user_id and user_name:
@@ -727,8 +728,9 @@ def process_message(
                 )
                 print(f"Message not for AI, saved as unprocessed: {message_id}")
                 return
-            # AI宛て → 処理を続行
+            # AI宛て → 処理を続行（ただし新規案件は作らない）
             print(f"Processing as reply to AI (awaiting reply mode): {message_id}")
+            is_reply_mode = True  # 返信モード（新規案件作成しない）
             has_trigger = True  # 自動送信時間帯の判定用にTrueにする
         elif has_trigger:
             # トリガーがある場合、未処理メッセージを取得して結合
@@ -1033,8 +1035,8 @@ def process_message(
         url_info += f"\nURLs: {', '.join(urls)}"
         order_service.add_attachment_to_order(order_id, url_info, order_created_at)
 
-    elif is_order_request or has_attachments:
-        # 新規依頼として処理
+    elif (is_order_request or has_attachments) and not is_reply_mode:
+        # 新規依頼として処理（返信モードでは新規案件を作らない）
 
         # 案件名を抽出
         project_name = ai_service.extract_project_name(user_message) if user_message.strip() else ""
