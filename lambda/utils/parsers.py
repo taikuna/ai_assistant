@@ -14,7 +14,45 @@ def extract_urls(text: str) -> List[str]:
 
 def extract_deadline(text: str) -> Optional[str]:
     """テキストから納期を抽出"""
-    patterns = [
+    from datetime import timedelta, timezone
+
+    # 日本時間で処理
+    jst = timezone(timedelta(hours=9))
+    now = datetime.now(jst)
+    year = now.year
+
+    # 相対表現のパターン（本日、今日、明日など）
+    relative_patterns = {
+        r'本日|今日': 0,
+        r'明日': 1,
+        r'明後日|あさって': 2,
+    }
+
+    # 時間抽出パターン
+    time_pattern = r'(\d{1,2})[時:](\d{0,2})'
+
+    # 相対表現をチェック
+    for pattern, days_offset in relative_patterns.items():
+        if re.search(pattern, text):
+            target_date = now + timedelta(days=days_offset)
+
+            # 時間指定があるか確認
+            time_match = re.search(time_pattern, text)
+            if time_match:
+                hour = int(time_match.group(1))
+                minute = int(time_match.group(2)) if time_match.group(2) else 0
+            else:
+                # 時間指定なし: 18時、ただし本日で17時過ぎなら23:59
+                if days_offset == 0 and now.hour >= 17:
+                    hour, minute = 23, 59
+                else:
+                    hour, minute = 18, 0
+
+            deadline_dt = datetime(target_date.year, target_date.month, target_date.day, hour, minute)
+            return deadline_dt.strftime('%Y-%m-%d %H:%M')
+
+    # 具体的な日付パターン
+    date_patterns = [
         r'(\d{1,2})/(\d{1,2}).*?(\d{1,2}):(\d{2})',
         r'(\d{1,2})月(\d{1,2})日.*?(\d{1,2}):(\d{2})',
         r'(\d{1,2})/(\d{1,2}).*?(\d{1,2})時',
@@ -23,21 +61,26 @@ def extract_deadline(text: str) -> Optional[str]:
         r'(\d{1,2})月(\d{1,2})日',
     ]
 
-    now = datetime.now()
-    year = now.year
-
-    for pattern in patterns:
+    for pattern in date_patterns:
         match = re.search(pattern, text)
         if match:
             groups = match.groups()
             month = int(groups[0])
             day = int(groups[1])
-            hour = int(groups[2]) if len(groups) > 2 else 18  # 時間指定なしは18時
+            hour = int(groups[2]) if len(groups) > 2 else None
             minute = int(groups[3]) if len(groups) > 3 else 0
 
             # 過去の月なら来年
             if month < now.month:
                 year = now.year + 1
+
+            # 時間指定なしの場合
+            if hour is None:
+                # 今日で17時過ぎなら23:59
+                if month == now.month and day == now.day and now.hour >= 17:
+                    hour, minute = 23, 59
+                else:
+                    hour = 18
 
             try:
                 deadline_dt = datetime(year, month, day, hour, minute)

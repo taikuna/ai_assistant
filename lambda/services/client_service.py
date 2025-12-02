@@ -235,3 +235,13 @@ class ClientService:
                 return company
 
         return None
+
+    def delete_client(self, group_id: str) -> bool:
+        """クライアントを削除"""
+        try:
+            self.table.delete_item(Key={'group_id': group_id})
+            print(f"Deleted client: {group_id}")
+            return True
+        except Exception as ex:
+            print(f"Error deleting client: {str(ex)}")
+            return False

@@ -26,6 +26,7 @@ class IncomingMessage:
     reply_token: Optional[str]  # LINE用
     raw_event: dict  # 元のイベントデータ
     attachments: List[Attachment] = field(default_factory=list)
+    mentioned_user_ids: List[str] = field(default_factory=list)  # メンションされたユーザーID
 
 
 @dataclass

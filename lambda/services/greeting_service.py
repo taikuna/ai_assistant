@@ -56,9 +56,9 @@ class GreetingService:
     def create_greeting(self, company_name: Optional[str], user_name: str) -> str:
         """挨拶メッセージを生成"""
         if company_name and company_name != "未登録クライアント":
-            return f"{company_name}\n{user_name}様\n\nいつもお世話になっております！\n合同会社四次元のAI秘書です。\n\n"
+            return f"{company_name}\n{user_name}様\n\nいつもお世話になっております！\n合同会社四次元のAIです。\n\n"
         else:
-            return f"{user_name}様\n\nいつもお世話になっております！\n合同会社四次元のAI秘書です。\n\n"
+            return f"{user_name}様\n\nいつもお世話になっております！\n合同会社四次元のAIです。\n\n"
 
     def add_greeting_if_needed(
         self,

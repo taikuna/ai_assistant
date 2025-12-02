@@ -57,11 +57,15 @@ class DriveService:
         """
         try:
             today = datetime.now().strftime('%Y-%m-%d')
-            # 案件名があれば含める
+            # 担当者名から「様」を除いた名前を取得
+            staff_name = customer_name.split(' - ')[0] if ' - ' in customer_name else customer_name
+            staff_name = staff_name.replace('様', '').strip()
+
+            # フォルダ名を構築: 日付_案件名_担当者様_ID
             if project_name:
-                folder_name = f"{today}_{project_name}_{order_id[:8]}"
+                folder_name = f"{today}_{project_name}_{staff_name}様_{order_id[:8]}"
             else:
-                folder_name = f"{today}_{order_id[:8]}"
+                folder_name = f"{today}_{staff_name}様_{order_id[:8]}"
 
             # 親フォルダを決定（会社フォルダがあればそこ、なければルート）
             target_parent = parent_folder_id if parent_folder_id else self.folder_id

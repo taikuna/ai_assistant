@@ -36,7 +36,9 @@ class ApprovalService:
         customer_name: str,
         company_name: str,
         original_message: str,
-        order_id: str = None
+        order_id: str = None,
+        mention_user_id: str = None,
+        order_info: dict = None  # 依頼情報（承認後に通知するため）
     ) -> str:
         """承認待ちメッセージを保存
 
@@ -58,8 +60,13 @@ class ApprovalService:
             'company_name': company_name,
             'original_message': original_message[:500],  # 長すぎる場合は切り詰め
             'order_id': order_id or '',
-            'status': 'pending'  # pending, approved, rejected
+            'status': 'pending',  # pending, approved, rejected
+            'mention_user_id': mention_user_id or ''  # メンション用ユーザーID
         }
+
+        # 依頼情報を追加（承認後に通知するため）
+        if order_info:
+            item['order_info'] = json.dumps(order_info, ensure_ascii=False)
 
         self.table.put_item(Item=item)
         print(f"Pending message saved: {pending_id}")
@@ -69,13 +76,24 @@ class ApprovalService:
         """保留メッセージを取得"""
         try:
             response = self.table.scan(
-                FilterExpression=Attr('pending_id').eq(pending_id) & Attr('status').eq('pending'),
-                Limit=1
+                FilterExpression=Attr('pending_id').eq(pending_id) & Attr('status').eq('pending')
             )
             items = response.get('Items', [])
             return items[0] if items else None
         except Exception as ex:
             print(f"Get pending error: {str(ex)}")
+            return None
+
+    def get_message_by_id(self, pending_id: str) -> Optional[dict]:
+        """ステータス関係なくメッセージを取得（納品用）"""
+        try:
+            response = self.table.scan(
+                FilterExpression=Attr('pending_id').eq(pending_id)
+            )
+            items = response.get('Items', [])
+            return items[0] if items else None
+        except Exception as ex:
+            print(f"Get message by id error: {str(ex)}")
             return None
 
     def approve_message(self, pending_id: str, edited_text: str = None) -> Optional[dict]:
@@ -125,7 +143,11 @@ class ApprovalService:
 
     def update_pending_response(self, pending_id: str, new_response: str) -> bool:
         """保留メッセージの返信テキストを更新"""
+        # まずpending状態のメッセージを探す
         pending = self.get_pending_message(pending_id)
+        if not pending:
+            # pending以外のステータスでも取得を試みる
+            pending = self.get_message_by_id(pending_id)
         if not pending:
             return False
 
@@ -150,6 +172,49 @@ class ApprovalService:
         except Exception as ex:
             print(f"Get latest pending error: {str(ex)}")
             return None
+
+    def save_registration_for_cancel(self, registration_id: str, group_id: str, company_name: str):
+        """会社名登録をキャンセル用に一時保存"""
+        try:
+            created_at = datetime.now().isoformat()
+            item = {
+                'pending_id': f"reg_{registration_id}",
+                'created_at': created_at,
+                'group_id': group_id,
+                'company_name': company_name,
+                'status': 'registration',
+                'expires_at': (datetime.now() + timedelta(hours=1)).isoformat()
+            }
+            self.table.put_item(Item=item)
+            print(f"Saved registration for cancel: {registration_id}")
+        except Exception as ex:
+            print(f"Save registration error: {str(ex)}")
+
+    def get_registration_for_cancel(self, registration_id: str) -> Optional[dict]:
+        """キャンセル用の登録情報を取得"""
+        try:
+            response = self.table.scan(
+                FilterExpression=Attr('pending_id').eq(f"reg_{registration_id}") & Attr('status').eq('registration')
+            )
+            items = response.get('Items', [])
+            return items[0] if items else None
+        except Exception as ex:
+            print(f"Get registration error: {str(ex)}")
+            return None
+
+    def mark_registration_cancelled(self, registration_id: str):
+        """登録キャンセル済みとしてマーク"""
+        try:
+            reg = self.get_registration_for_cancel(registration_id)
+            if reg:
+                self.table.update_item(
+                    Key={'pending_id': f"reg_{registration_id}", 'created_at': reg['created_at']},
+                    UpdateExpression='SET #status = :status',
+                    ExpressionAttributeNames={'#status': 'status'},
+                    ExpressionAttributeValues={':status': 'cancelled'}
+                )
+        except Exception as ex:
+            print(f"Mark registration cancelled error: {str(ex)}")
 
 
 class FlexMessageBuilder:
@@ -300,7 +365,7 @@ class FlexMessageBuilder:
                         },
                         {
                             "type": "text",
-                            "text": "編集する場合は編集内容を入力後「編集送信 ID」",
+                            "text": "修正する場合：「修正 ID：指示内容」",
                             "size": "xxs",
                             "color": "#AAAAAA",
                             "margin": "md",

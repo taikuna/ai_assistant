@@ -25,6 +25,7 @@ mkdir -p "$BUILD_DIR"
 # Lambdaコードをコピー（ディレクトリ構造を維持）
 cp "$LAMBDA_DIR/lambda_function.py" "$BUILD_DIR/"
 cp "$LAMBDA_DIR/config.py" "$BUILD_DIR/"
+cp "$LAMBDA_DIR/file_processor.py" "$BUILD_DIR/"
 
 # handlers/
 mkdir -p "$BUILD_DIR/handlers"
@@ -46,6 +47,10 @@ cp "$LAMBDA_DIR/services/greeting_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/client_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/queue_service.py" "$BUILD_DIR/services/"
 cp "$LAMBDA_DIR/services/approval_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/revision_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/notes_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/unprocessed_message_service.py" "$BUILD_DIR/services/"
+cp "$LAMBDA_DIR/services/user_mapping_service.py" "$BUILD_DIR/services/"
 
 # クライアントマスターJSON
 cp "$LAMBDA_DIR/clients.json" "$BUILD_DIR/"

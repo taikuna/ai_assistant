@@ -139,8 +139,14 @@ class LinePushService:
             print(f"Push Error: {str(ex)}")
             return False
 
-    def push_to_group(self, group_id: str, text: str) -> bool:
-        """グループにpushメッセージを送信"""
+    def push_to_group(self, group_id: str, text: str, mention_user_id: str = None) -> bool:
+        """グループにpushメッセージを送信
+
+        Args:
+            group_id: 送信先グループID
+            text: メッセージテキスト
+            mention_user_id: メンションするユーザーID（指定時はtextV2でメンション付き送信）
+        """
         import urllib.request
 
         url = 'https://api.line.me/v2/bot/message/push'
@@ -148,9 +154,28 @@ class LinePushService:
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.channel_access_token}'
         }
+
+        # メンションが指定されている場合はtextV2を使用
+        if mention_user_id:
+            message = {
+                'type': 'textV2',
+                'text': '{mention} \n' + text[:4900],
+                'substitution': {
+                    'mention': {
+                        'type': 'mention',
+                        'mentionee': {
+                            'type': 'user',
+                            'userId': mention_user_id
+                        }
+                    }
+                }
+            }
+        else:
+            message = {'type': 'text', 'text': text[:5000]}
+
         data = {
             'to': group_id,
-            'messages': [{'type': 'text', 'text': text[:5000]}]
+            'messages': [message]
         }
 
         try:

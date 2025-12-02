@@ -67,9 +67,21 @@ class AIService:
         """依頼メッセージから案件名を抽出"""
         url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
 
-        prompt = f"""以下の依頼メッセージから案件名・プロジェクト名を抽出してください。
-案件名が明確にない場合は、依頼内容を簡潔に表す名前（10文字以内）を生成してください。
-回答は案件名のみを出力し、説明や記号は不要です。
+        prompt = f"""以下の依頼メッセージから、判別しやすい案件名を作成してください。
+
+【作成ルール】
+1. 同じ顧客から複数の依頼があっても区別できるようにする
+2. 案件の特徴（サイズ、種類、枚数など）を含める
+3. 「□案件」の後に書かれた内容があればベースにする
+4. 短すぎず、判別に必要な情報を含める
+5. 顧客名・担当者名は含めない（別で管理されるため）
+
+例：
+- 「A3 エモカット 2枚」
+- 「商品カタログ B4 5ページ」
+- 「ポートレート補正 3枚」
+
+回答は案件名のみを出力してください。説明や記号は不要です。
 
 依頼メッセージ:
 {message}
@@ -92,8 +104,8 @@ class AIService:
                 # 改行や余分な文字を削除
                 project_name = project_name.split('\n')[0].strip()
                 # 長すぎる場合は切り詰め
-                if len(project_name) > 30:
-                    project_name = project_name[:30]
+                if len(project_name) > 50:
+                    project_name = project_name[:50]
                 return project_name
         except Exception as ex:
             print(f"Project name extraction error: {str(ex)}")
