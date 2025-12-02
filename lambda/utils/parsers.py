@@ -89,3 +89,35 @@ def extract_deadline(text: str) -> Optional[str]:
                 pass
 
     return None
+
+
+def is_deadline_correction(text: str) -> bool:
+    """納期修正のメッセージかどうか判定
+
+    例: 「12月4日でした」「納期は12/5です」「12月3日に変更」
+    """
+    # 納期修正を示すキーワード
+    correction_keywords = [
+        r'でした',
+        r'です$',
+        r'に変更',
+        r'変更で',
+        r'修正',
+        r'訂正',
+        r'間違',
+    ]
+
+    # 日付パターン
+    date_patterns = [
+        r'\d{1,2}/\d{1,2}',
+        r'\d{1,2}月\d{1,2}日',
+    ]
+
+    # 日付が含まれていて、かつ修正キーワードがあるか
+    has_date = any(re.search(p, text) for p in date_patterns)
+    has_correction = any(re.search(p, text) for p in correction_keywords)
+
+    # 短いメッセージで日付のみの場合も納期修正とみなす（50文字以下）
+    is_short_date_only = has_date and len(text.strip()) <= 50
+
+    return has_date and (has_correction or is_short_date_only)

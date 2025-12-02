@@ -32,7 +32,7 @@ from services.unprocessed_message_service import UnprocessedMessageService
 from services.user_mapping_service import UserMappingService
 
 # ユーティリティ
-from utils.parsers import extract_urls, extract_deadline
+from utils.parsers import extract_urls, extract_deadline, is_deadline_correction
 
 # 設定
 from config import SYSTEM_PROMPT, SUMMARY_PROMPT
@@ -798,6 +798,38 @@ def process_message(
 
         handler.reply(message, ai_response)
         return
+
+    # 納期修正の処理（「12月4日でした」のような短いメッセージ）
+    if is_deadline_correction(user_message):
+        new_deadline = extract_deadline(user_message)
+        if new_deadline:
+            # 直近の依頼を取得（60分以内）
+            recent_order = order_service.get_recent_order(group_id, message.user_id, minutes=60)
+            if recent_order:
+                order_id = recent_order['order_id']
+                order_created_at = recent_order['created_at']
+                old_deadline = recent_order.get('deadline', '未設定')
+                project_name = recent_order.get('project_name', '')
+
+                # 依頼の納期を更新
+                order_service.update_order(order_id, {'deadline': new_deadline}, order_created_at)
+
+                # カレンダーも更新（新しいイベントを作成）
+                calendar_service.create_deadline_event(
+                    order_id=order_id,
+                    customer_name=user_name,
+                    deadline=new_deadline,
+                    description=f"納期修正: {old_deadline} → {new_deadline}"
+                )
+
+                # 返信
+                if project_name:
+                    ai_response = f"承知いたしました。\n「{project_name}」の納期を {new_deadline} に修正いたしました。"
+                else:
+                    ai_response = f"承知いたしました。\n依頼（ID: {order_id[:8]}）の納期を {new_deadline} に修正いたしました。"
+
+                handler.reply(message, ai_response)
+                return
 
     # 添付ファイルがある場合
     has_attachments = len(message.attachments) > 0
