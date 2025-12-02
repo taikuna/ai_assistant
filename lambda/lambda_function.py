@@ -627,6 +627,7 @@ def process_message(
     admin_user_id = os.environ.get('ADMIN_USER_ID', '')
     is_proxy_send = False  # 代理送信フラグ
     proxy_user_id = None  # 代理送信時のメンション先ユーザーID
+    has_trigger = False  # トリガーキーワードがあったかどうか（自動送信判定用）
 
     # グループ発言時はユーザー名→IDのマッピングを保存（後で名前から検索できるように）
     if group_id and message.user_id and user_name:
@@ -1040,7 +1041,8 @@ def process_message(
         company_name=company_name,
         original_message=user_message,
         mention_user_id=proxy_user_id if is_proxy_send else (message.user_id if group_id else None),  # 代理送信時は検索したID、通常時は発言者
-        order_info=order_info  # 依頼情報（承認後に通知するため）
+        order_info=order_info,  # 依頼情報（承認後に通知するため）
+        has_trigger=has_trigger  # トリガーキーワードがあれば自動送信時間帯は承認スキップ
     )
 
 
@@ -1084,12 +1086,24 @@ def send_response(
     company_name: str = "",
     original_message: str = "",
     mention_user_id: str = None,
-    order_info: dict = None
+    order_info: dict = None,
+    has_trigger: bool = False
 ):
-    """返信を送信（承認フロー、遅延、または即時）"""
+    """返信を送信（承認フロー、遅延、または即時）
+
+    Args:
+        has_trigger: トリガーキーワード(@ai等)があったかどうか
+                     自動送信時間帯（日本時間4:00-13:00）でこれがTrueなら承認スキップ
+    """
 
     # 承認フローが有効な場合
     if approval_service and approval_service.is_approval_enabled():
+        # 自動送信時間帯（日本時間4:00-13:00）かつトリガーキーワードありなら承認スキップ
+        if has_trigger and approval_service.is_auto_send_time():
+            print(f"Auto-send time and has trigger keyword - skipping approval")
+            # 即時送信（承認なし）
+            handler.reply(message, response_text)
+            return
         target_id = message.group_id if message.group_id else message.user_id
         target_type = 'group' if message.group_id else 'user'
 

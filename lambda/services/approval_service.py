@@ -14,6 +14,11 @@ from boto3.dynamodb.conditions import Key, Attr
 class ApprovalService:
     """返信の承認フローを管理するサービス"""
 
+    # 自動送信時間帯（日本時間）
+    # ジョージア時間 23:00-8:00 = 日本時間 4:00-13:00
+    AUTO_SEND_START_HOUR = 4   # 日本時間 4:00
+    AUTO_SEND_END_HOUR = 13    # 日本時間 13:00
+
     def __init__(self, table_name: str = None):
         self.dynamodb = boto3.resource('dynamodb')
         self.table = self.dynamodb.Table(table_name or 'ai_secretary_pending_messages')
@@ -27,6 +32,20 @@ class ApprovalService:
     def is_approval_group(self, group_id: str) -> bool:
         """確認用グループかどうか"""
         return group_id == self.approval_group_id
+
+    def is_auto_send_time(self) -> bool:
+        """自動送信時間帯かどうか（日本時間で判定）
+
+        ジョージア時間 23:00-8:00 = 日本時間 4:00-13:00
+        この時間帯はトリガーキーワードがあれば承認なしで自動送信
+        """
+        from datetime import timezone, timedelta
+        jst = timezone(timedelta(hours=9))
+        now_jst = datetime.now(jst)
+        current_hour = now_jst.hour
+
+        # 4:00 <= 現在時刻 < 13:00 なら自動送信時間帯
+        return self.AUTO_SEND_START_HOUR <= current_hour < self.AUTO_SEND_END_HOUR
 
     def save_pending_message(
         self,
